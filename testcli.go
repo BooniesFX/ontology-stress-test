@@ -111,7 +111,7 @@ func testAction(c *cli.Context) (err error) {
 	racc := account.NewAccount("SHA256withECDSA")
 	p, _ := p2pserver.NewServer(racc)
 	p.GetNetWork().Start()
-	defer p.Stop()
+	defer p.GetNetWork().Halt()
 	netreqactor.SetLedgerPid(ledgerPID)
 
 	nodeAddr := Ip + ":" + Port

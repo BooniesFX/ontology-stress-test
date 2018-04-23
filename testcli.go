@@ -87,7 +87,7 @@ func testAction(c *cli.Context) (err error) {
 	txnNum := c.Int("num")
 	passwd := c.String("password")
 	genFile := c.Bool("gen")
-
+	idStr := c.String("id")
 	acct := account.Open(account.WALLET_FILENAME, []byte(passwd))
 	if acct == nil {
 		fmt.Println(" can not get default account")
@@ -118,10 +118,10 @@ func testAction(c *cli.Context) (err error) {
 	p.GetNetWork().Connect(nodeAddr, false)
 	<-time.After(time.Second * 3)
 	if p.GetConnectionCnt() >= 1 {
-		fmt.Println("peer connected, begin test process")
-	}
-	transferTest(txnNum, acc, p)
 
+		fmt.Println("peer connected, begin test process")
+		transferTest(txnNum, acc, p, idStr)
+	}
 	return nil
 }
 
@@ -162,7 +162,7 @@ func GenTransferFile(n int, acc *account.Account, fileName string) {
 
 }
 
-func transferTest(n int, acc *account.Account, p *p2pserver.P2PServer) {
+func transferTest(n int, acc *account.Account, p *p2pserver.P2PServer, idStr string) {
 	if n <= 0 {
 		n = 1
 	}
@@ -177,9 +177,13 @@ func transferTest(n int, acc *account.Account, p *p2pserver.P2PServer) {
 	if err != nil {
 		fmt.Println("Error New Tx message: ", err)
 	}
+
+	//id, _ := strconv.ParseUint(idStr, 10, 64)
+	//dp := p.GetNetWork().GetPeer(id) //someone
+	server := p.GetNetWork()
 	fmt.Printf("%v - send test transation start\n", time.Now())
 	for i := 0; i < n; i++ {
-		p.GetNetWork().Xmit(buffer, false)
+		server.Xmit(buffer, false)
 	}
 	fmt.Printf("%v - %d test transations done\n", time.Now(), n)
 }
@@ -239,6 +243,11 @@ func NewCommand() *cli.Command {
 				Name:  "password, p",
 				Usage: "wallet password",
 				Value: "passwordtest",
+			},
+			cli.StringFlag{
+				Name:  "id, i",
+				Usage: "peer id",
+				Value: "",
 			},
 			cli.BoolFlag{
 				Name:  "gen, g",

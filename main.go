@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
@@ -13,11 +15,13 @@ import (
 	"github.com/ontio/ontology/account"
 	"github.com/ontio/ontology/common/config"
 	"github.com/ontio/ontology/common/log"
+	"github.com/ontio/ontology/common/password"
 	"github.com/ontio/ontology/events"
 	"github.com/ontio/ontology/http/jsonrpc"
 	"github.com/ontio/ontology/http/restful"
 	"github.com/ontio/ontology/p2pserver"
 	netreqactor "github.com/ontio/ontology/p2pserver/actor/req"
+	"github.com/urfave/cli"
 )
 
 const (
@@ -37,7 +41,32 @@ func init() {
 	runtime.GOMAXPROCS(coreNum)
 }
 
+func setupAPP() *cli.App {
+	app := cli.NewApp()
+	app.Usage = "Ontology CLI"
+	app.Action = ontMain
+	app.Version = "0.7.0"
+	app.Copyright = "Copyright in 2018 The Ontology Authors"
+
+	return app
+}
+
 func main() {
+	defer func() {
+		if p := recover(); p != nil {
+			if str, ok := p.(string); ok {
+				log.Warn("Leave gracefully. ", errors.New(str))
+			}
+		}
+	}()
+
+	if err := setupAPP().Run(os.Args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func ontMain(ctx *cli.Context) {
 	var acct *account.Account
 	var err error
 	log.Trace("Node version: ", config.Version)
@@ -49,7 +78,19 @@ func main() {
 	}
 
 	log.Info("0. Open the account")
-	client := account.GetClient()
+	var pwd []byte = nil
+	if ctx.IsSet("password") {
+		pwd = []byte(ctx.String("password"))
+	} else {
+		pwd, err = password.GetAccountPassword()
+		if err != nil {
+			log.Fatal("Password error")
+			os.Exit(1)
+		}
+	}
+
+	wallet := ctx.GlobalString("file")
+	client := account.Open(wallet, pwd)
 	if client == nil {
 		log.Fatal("Can't get local account.")
 		os.Exit(1)

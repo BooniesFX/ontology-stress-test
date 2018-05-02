@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"os"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/ontio/ontology-crypto/keypair"
@@ -18,7 +17,8 @@ import (
 	"github.com/ontio/ontology/account"
 	_ "github.com/ontio/ontology/cli"
 	"github.com/ontio/ontology/common"
-	"github.com/ontio/ontology/common/config"
+	//"github.com/ontio/ontology/common/config"
+	"github.com/ontio/ontology/common/log"
 	"github.com/ontio/ontology/core/genesis"
 	"github.com/ontio/ontology/core/signature"
 	"github.com/ontio/ontology/core/types"
@@ -39,6 +39,7 @@ var (
 )
 
 func main() {
+	log.Init(log.Stdout)
 	app := cli.NewApp()
 	app.Name = "nodectl"
 	app.Version = Version
@@ -58,7 +59,7 @@ func main() {
 		cli.StringFlag{
 			Name:        "port",
 			Usage:       "node's port",
-			Value:       strconv.Itoa(int(config.Parameters.NodePort)),
+			Value:       "20338",
 			Destination: &Port,
 		},
 	}
@@ -88,7 +89,7 @@ func testAction(c *cli.Context) (err error) {
 	passwd := c.String("password")
 	genFile := c.Bool("gen")
 	idStr := c.String("id")
-	acct := account.Open(account.WALLET_FILENAME, []byte(passwd))
+	acct := account.Open("wallet.dat", []byte(passwd))
 	if acct == nil {
 		fmt.Println(" can not get default account")
 		os.Exit(1)
@@ -110,13 +111,13 @@ func testAction(c *cli.Context) (err error) {
 
 	racc := account.NewAccount("SHA256withECDSA")
 	p, _ := p2pserver.NewServer(racc)
-	p.GetNetWork().Start()
-	defer p.GetNetWork().Halt()
+	p.Start(false)
+	defer p.Stop()
 	netreqactor.SetLedgerPid(ledgerPID)
 
 	nodeAddr := Ip + ":" + Port
 	p.GetNetWork().Connect(nodeAddr, false)
-	<-time.After(time.Second * 3)
+	<-time.After(time.Second * 5)
 	if p.GetConnectionCnt() >= 1 {
 
 		fmt.Println("peer connected, begin test process")

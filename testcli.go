@@ -7,28 +7,20 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/urfave/cli"
-	"math/big"
 	"os"
 	"sort"
 	"time"
 
 	"github.com/ontio/ontology-crypto/keypair"
-	ldgactor "github.com/ontio/ontology-stress-test/actor"
+	//ldgactor "github.com/ontio/ontology-stress-test/actor"
 	"github.com/ontio/ontology/account"
 	_ "github.com/ontio/ontology/cli"
-	"github.com/ontio/ontology/common"
-	//"github.com/ontio/ontology/common/config"
+	test "github.com/ontio/ontology/cli/test"
 	"github.com/ontio/ontology/common/log"
-	"github.com/ontio/ontology/core/genesis"
 	"github.com/ontio/ontology/core/signature"
 	"github.com/ontio/ontology/core/types"
-	"github.com/ontio/ontology/core/utils"
 	"github.com/ontio/ontology/p2pserver"
-	netreqactor "github.com/ontio/ontology/p2pserver/actor/req"
 	"github.com/ontio/ontology/p2pserver/message/msg_pack"
-	"github.com/ontio/ontology/smartcontract/service/native/states"
-	sstates "github.com/ontio/ontology/smartcontract/states"
-	vmtypes "github.com/ontio/ontology/smartcontract/types"
 )
 
 var Version string
@@ -88,7 +80,6 @@ func testAction(c *cli.Context) (err error) {
 	txnNum := c.Int("num")
 	passwd := c.String("password")
 	genFile := c.Bool("gen")
-	idStr := c.String("id")
 	acct := account.Open("wallet.dat", []byte(passwd))
 	if acct == nil {
 		fmt.Println(" can not get default account")
@@ -106,14 +97,14 @@ func testAction(c *cli.Context) (err error) {
 	fmt.Println("start to connect destination peer...")
 	//connect
 	//fake ledger
-	ldgerActor := ldgactor.NewLedgerActor()
-	ledgerPID := ldgerActor.Start()
+	//ldgerActor := ldgactor.NewLedgerActor()
+	//ledgerPID := ldgerActor.Start()
 
 	racc := account.NewAccount("SHA256withECDSA")
 	p, _ := p2pserver.NewServer(racc)
-	p.Start(false)
+	p.Start()
 	defer p.Stop()
-	netreqactor.SetLedgerPid(ledgerPID)
+	//netreqactor.SetLedgerPid(ledgerPID)
 
 	nodeAddr := Ip + ":" + Port
 	p.GetNetWork().Connect(nodeAddr, false)
@@ -121,7 +112,7 @@ func testAction(c *cli.Context) (err error) {
 	if p.GetConnectionCnt() >= 1 {
 
 		fmt.Println("peer connected, begin test process")
-		transferTest(txnNum, acc, p, idStr)
+		transferTest(txnNum, acc, p)
 	}
 	return nil
 }
@@ -151,7 +142,7 @@ func GenTransferFile(n int, acc *account.Account, fileName string) {
 	for i := 0; i < n; i++ {
 		to := acc.Address
 		binary.BigEndian.PutUint64(to[:], uint64(i))
-		tx := NewOntTransferTransaction(acc.Address, to, 1)
+		tx := test.NewOntTransferTransaction(acc.Address, to, 1)
 		if err := signTransaction(acc, tx); err != nil {
 			fmt.Println("signTransaction error:", err)
 			os.Exit(1)
@@ -163,12 +154,12 @@ func GenTransferFile(n int, acc *account.Account, fileName string) {
 
 }
 
-func transferTest(n int, acc *account.Account, p *p2pserver.P2PServer, idStr string) {
+func transferTest(n int, acc *account.Account, p *p2pserver.P2PServer) {
 	if n <= 0 {
 		n = 1
 	}
 
-	txn := NewOntTransferTransaction(acc.Address, acc.Address, 1)
+	txn := test.NewOntTransferTransaction(acc.Address, acc.Address, 1)
 	if err := signTransaction(acc, txn); err != nil {
 		fmt.Println("signTransaction error:", err)
 		os.Exit(1)
@@ -179,53 +170,12 @@ func transferTest(n int, acc *account.Account, p *p2pserver.P2PServer, idStr str
 		fmt.Println("Error New Tx message: ", err)
 	}
 
-	//id, _ := strconv.ParseUint(idStr, 10, 64)
-	//dp := p.GetNetWork().GetPeer(id) //someone
 	server := p.GetNetWork()
 	fmt.Printf("%v - send test transation start\n", time.Now())
 	for i := 0; i < n; i++ {
 		server.Xmit(buffer, false)
 	}
 	fmt.Printf("%v - %d test transations done\n", time.Now(), n)
-}
-
-func NewOntTransferTransaction(from, to common.Address, value int64) *types.Transaction {
-	var sts []*states.State
-	sts = append(sts, &states.State{
-		From:  from,
-		To:    to,
-		Value: big.NewInt(value),
-	})
-	transfers := new(states.Transfers)
-	transfers.States = sts
-
-	bf := new(bytes.Buffer)
-
-	if err := transfers.Serialize(bf); err != nil {
-		fmt.Println("Serialize transfers struct error.")
-		os.Exit(1)
-	}
-
-	cont := &sstates.Contract{
-		Address: genesis.OntContractAddress,
-		Method:  "transfer",
-		Args:    bf.Bytes(),
-	}
-
-	ff := new(bytes.Buffer)
-	if err := cont.Serialize(ff); err != nil {
-		fmt.Println("Serialize contract struct error.")
-		os.Exit(1)
-	}
-
-	tx := utils.NewInvokeTransaction(vmtypes.VmCode{
-		VmType: vmtypes.Native,
-		Code:   ff.Bytes(),
-	})
-
-	tx.Nonce = uint32(time.Now().Unix())
-
-	return tx
 }
 
 func NewCommand() *cli.Command {
@@ -244,11 +194,6 @@ func NewCommand() *cli.Command {
 				Name:  "password, p",
 				Usage: "wallet password",
 				Value: "passwordtest",
-			},
-			cli.StringFlag{
-				Name:  "id, i",
-				Usage: "peer id",
-				Value: "",
 			},
 			cli.BoolFlag{
 				Name:  "gen, g",

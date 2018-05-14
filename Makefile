@@ -5,9 +5,11 @@ Minversion := $(shell date)
 BUILD_NODE_PAR = -ldflags "-X github.com/ontio/ontology-stress-test/common/config.Version=$(VERSION)" #-race
 BUILD_NODECTL_PAR = -ldflags "-X main.Version=$(VERSION)"
 
-all:
-	$(GC)  $(BUILD_NODE_PAR) -o ontology-stress-test main.go
+net-bench:
+	$(GC)  $(BUILD_NODE_PAR) -o net-stress-test main.go
 	$(GC)  $(BUILD_NODECTL_PAR) testcli.go
+bench:
+	$(GC)  $(BUILD_NODE_PAR) -o ont-bench ontbench.go
 
 format:
 	$(GOFMT) -w main.go

@@ -14,11 +14,11 @@ import (
 	tactor "github.com/ontio/ontology-stress-test/actor"
 	"github.com/ontio/ontology/account"
 	//"github.com/ontio/ontology/cmd"
+	cmdcom "github.com/ontio/ontology/cmd/common"
 	"github.com/ontio/ontology/cmd/utils"
 	"github.com/ontio/ontology/common"
 	"github.com/ontio/ontology/common/config"
 	"github.com/ontio/ontology/common/log"
-	"github.com/ontio/ontology/common/password"
 	"github.com/ontio/ontology/core/ledger"
 	"github.com/ontio/ontology/events"
 	hserver "github.com/ontio/ontology/http/base/actor"
@@ -156,55 +156,30 @@ func initLog(ctx *cli.Context) {
 // return cfg, nil
 //}
 
-func initWallet(ctx *cli.Context) (*account.ClientImpl, error) {
-	walletFile := ctx.GlobalString(utils.WalletFileFlag.Name)
+func initWallet(ctx *cli.Context) (*account.Account, error) {
+	walletFile := ctx.GlobalString(utils.GetFlagName(utils.WalletFileFlag))
 	if walletFile == "" {
 		return nil, fmt.Errorf("Please config wallet file using --wallet flag")
 	}
 	if !common.FileExisted(walletFile) {
 		return nil, fmt.Errorf("Cannot find wallet file:%s. Please create wallet first", walletFile)
 	}
-
-	var pwd []byte = nil
-	var err error
-	if ctx.IsSet(utils.AccountPassFlag.Name) {
-		pwd = []byte(ctx.GlobalString(utils.AccountPassFlag.Name))
-	} else {
-		pwd, err = password.GetAccountPassword()
-		if err != nil {
-			return nil, fmt.Errorf("Password error")
-		}
+	wallet, err := account.Open(walletFile)
+	if err != nil {
+		return nil, err
 	}
-	client := account.Open(walletFile, pwd)
-	if client == nil {
-		return nil, fmt.Errorf("Cannot open wallet file:%s", walletFile)
+	acc, err := cmdcom.GetAccount(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get account error:%s", err)
 	}
 
-	acc := client.GetDefaultAccount()
-	if acc == nil {
-		return nil, fmt.Errorf("Cannot GetDefaultAccount")
-	}
-
-	curPk := hex.EncodeToString(keypair.SerializePublicKey(acc.PublicKey))
-
-	switch config.DefConfig.Genesis.ConsensusType {
-	case config.CONSENSUS_TYPE_DBFT:
-		isBookKeeper := false
-		for _, pk := range config.DefConfig.Genesis.DBFT.Bookkeepers {
-			if pk == curPk {
-				isBookKeeper = true
-				break
-			}
-		}
-		if !isBookKeeper {
-			config.DefConfig.Common.EnableConsensus = false
-		}
-	case config.CONSENSUS_TYPE_SOLO:
+	if config.DefConfig.Genesis.ConsensusType == config.CONSENSUS_TYPE_SOLO {
+		curPk := hex.EncodeToString(keypair.SerializePublicKey(acc.PublicKey))
 		config.DefConfig.Genesis.SOLO.Bookkeepers = []string{curPk}
 	}
 
-	log.Infof("Wallet init success")
-	return client, nil
+	log.Infof("Account init success")
+	return acc, nil
 }
 
 func initLedger(ctx *cli.Context) (*ledger.Ledger, error) {
@@ -245,18 +220,12 @@ func initTxPool(ctx *cli.Context) (*proc.TXPoolServer, error) {
 	return txPoolServer, nil
 }
 
-func initP2PNode(ctx *cli.Context, wallet *account.ClientImpl, txpoolSvr *proc.TXPoolServer) (*p2pserver.P2PServer, *actor.PID, error) {
+func initP2PNode(ctx *cli.Context, acc *account.Account, txpoolSvr *proc.TXPoolServer) (*p2pserver.P2PServer, *actor.PID, error) {
 	if config.DefConfig.Genesis.ConsensusType == config.CONSENSUS_TYPE_SOLO {
 		return nil, nil, nil
 	}
-	acc := wallet.GetDefaultAccount()
-	if acc == nil {
-		return nil, nil, fmt.Errorf("Cannot GetDefaultAccount")
-	}
-	p2p, err := p2pserver.NewServer(acc)
-	if err != nil {
-		return nil, nil, fmt.Errorf("P2P node NewServer error:%s", err)
-	}
+	p2p := p2pserver.NewServer(acc)
+
 	p2pActor := p2pactor.NewP2PActor(p2p)
 	p2pPID, err := p2pActor.Start()
 	if err != nil {
@@ -265,18 +234,12 @@ func initP2PNode(ctx *cli.Context, wallet *account.ClientImpl, txpoolSvr *proc.T
 	p2p.SetPID(p2pPID)
 	err = p2p.Start()
 	if err != nil {
-		return nil, nil, fmt.Errorf("p2p sevice start error %s", err)
+		return nil, nil, fmt.Errorf("p2p service start error %s", err)
 	}
 	netreqactor.SetTxnPoolPid(txpoolSvr.GetPID(tc.TxActor))
 	txpoolSvr.RegisterActor(tc.NetActor, p2pPID)
 	hserver.SetNetServerPID(p2pPID)
-
-	if config.DefConfig.Genesis.ConsensusType == config.CONSENSUS_TYPE_VBFT {
-		return p2p, p2pPID, nil
-	}
 	p2p.WaitForPeersStart()
-	p2p.WaitForSyncBlkFinish()
-
 	log.Infof("P2P node init success")
 	return p2p, p2pPID, nil
 }

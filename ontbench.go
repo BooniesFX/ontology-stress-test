@@ -39,15 +39,15 @@ func init() {
 }
 
 func main() {
-	log.Init()
+	log.InitLog(log.InfoLog)
 	OntSdk = sdk.NewOntologySdk()
 	OntSdk.Rpc.SetAddress(RPC)
-	wallet, err := OntSdk.OpenWallet(WALLET_FILE, WALLET_PWD)
+	wallet, err := OntSdk.OpenWallet(WALLET_FILE)
 	if err != nil {
 		fmt.Printf("OpenWallet error:%s\n", err)
 		return
 	}
-	Admin, err = wallet.GetDefaultAccount()
+	Admin, err = wallet.GetDefaultAccount([]byte(WALLET_PWD))
 	if err != nil {
 		fmt.Printf("CreateAccount error:%s", err)
 		return
@@ -67,27 +67,44 @@ func main() {
 	}
 
 	if TO == "" {
-		fmt.Println("Dest address should be nil")
+		fmt.Println("Dest address should not be nil")
 		return
 	}
 	TestTransfer()
+	balance, err = OntSdk.Rpc.GetBalance(Admin.Address)
+	if err != nil {
+		fmt.Printf("GetBalance error:%s\n", err)
+		return
+	}
+	<-time.After(time.Second * 3)
+	fmt.Printf("Admin ont left:%d\n", balance.Ont)
+	if balance.Ont < 0 {
+		fmt.Printf("Admin balance not enought\n")
+		return
+	}
 }
 func TestTransfer() {
-	taskCh := make(chan int, 1)
-	t, _ := common.HexToBytes(TO)
-	toAcc, _ := common.AddressParseFromBytes(t)
+	taskCh := make(chan int, WORKER)
+	timerCh := make(chan int, 1)
+	toAcc, _ := common.AddressFromBase58(TO)
+	workerid := 0
+	index := 0
 	work := func() {
 		for {
 			select {
 			case t := <-taskCh:
 				if t == 0 {
-					close(taskCh)
-					fmt.Println("Transfer done:%v", time.Now())
+					workerid++
+					fmt.Printf("worker %d done:%v\n", workerid, time.Now())
+					if workerid == WORKER {
+						timerCh <- 0
+					}
 					return
 				}
-				_, err := OntSdk.Rpc.Transfer(0, 0, "ont", Admin, toAcc, 1)
+				index++
+				_, err := OntSdk.Rpc.Transfer(0, 30000+uint64(index), "ont", Admin, toAcc, 1)
 				if err != nil {
-					fmt.Printf("Transfer error:%s\n", err)
+					fmt.Printf("transfer error:%s\n", err)
 					return
 				}
 			}
@@ -103,14 +120,24 @@ func TestTransfer() {
 	for {
 		select {
 		case <-timer.C:
-			fmt.Println("Transfer start:%v", time.Now())
+			fmt.Printf("Transfer start:%v\n", time.Now())
 			for i := 0; i < TPS; i++ {
 				taskCh <- 1
 				reqCount++
 				if reqCount == COUNT {
-					taskCh <- 0
+					for i := 0; i < WORKER; i++ {
+						taskCh <- 0
+						timer.Stop()
+					}
+					break
 				}
 			}
+			fmt.Printf("transfer complete:%d\n", reqCount)
+		case t := <-timerCh:
+			if t == 0 {
+				return
+			}
 		}
+
 	}
 }
